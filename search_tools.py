@@ -85,14 +85,14 @@ def metaSearch(searchPath, lessThan, **kwargs):
     import xml.etree.ElementTree as ET
 
     # Find all metadata files in given directory.
-    possiblePaths = findMore(searchPath, 'MTD', 'L2A', '.xml', 2, sort=True)
+    meta_files = find(searchPath, 'MTD_TL.xml', 2)
 
     itemsFound = []
-    for f in possiblePaths:
+    for f in meta_files:
         root = ET.parse(f).getroot()
-        pref = root[3].tag  # Quality_Indicators_Info
-        field = root.find(pref)[0]  # Cloud_Coverage_Assessment
-        value = field.text
+        type_tag = root.find('{https://psd-14.sentinel2.eo.esa.int/PSD/S2_PDI_Level-2A_Tile_Metadata.xsd}Quality_Indicators_Info/Image_Content_QI')
+        value = type_tag.find('CLOUDY_PIXEL_PERCENTAGE')
+
         if float(value) <= float(lessThan):
             path = f.split('.SAFE')[0] + '.SAFE'
             itemsFound.append(path)
