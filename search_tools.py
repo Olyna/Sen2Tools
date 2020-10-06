@@ -91,7 +91,7 @@ def metaSearch(searchPath, lessThan, **kwargs):
     for f in meta_files:
         root = ET.parse(f).getroot()
         type_tag = root.find('{https://psd-14.sentinel2.eo.esa.int/PSD/S2_PDI_Level-2A_Tile_Metadata.xsd}Quality_Indicators_Info/Image_Content_QI')
-        value = type_tag.find('CLOUDY_PIXEL_PERCENTAGE')
+        value = float(type_tag.find('CLOUDY_PIXEL_PERCENTAGE').text)
 
         if float(value) <= float(lessThan):
             path = f.split('.SAFE')[0] + '.SAFE'

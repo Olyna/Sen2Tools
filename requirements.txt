@@ -1,0 +1,7 @@
+pandas
+geopandas
+Shapely
+Fiona
+python-csv
+DateTime
+xml-python
