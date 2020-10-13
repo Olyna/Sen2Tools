@@ -5,3 +5,4 @@ Fiona
 python-csv
 DateTime
 xml-python
+rasterio
