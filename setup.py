@@ -7,8 +7,8 @@ with open('requirements.txt') as f:
     required = f.read().splitlines()
 
 setuptools.setup(
-    name = "sen2tools", # Replace with your own username
-    version = "0.0.1",
+    name = "sen2tools",
+    version = "1.0.0",
     author = "Olympia Gounari",
     author_email = "olympia_g@live.com",
     description = "Tools to manipulate Sentinel-2 satellite data",
