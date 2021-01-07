@@ -150,7 +150,7 @@ def dataframe2tifCube(df, metadata, newFilename, searchPath, **kwargs):
         df (pandas dataframe): Every row is one cube's image, every column is a pixel.
         metadata (dictionary): Metadata of original cube.
         newFilename (string): Not a full path. Only the filename, without format ending.
-        searchPath (string): Fullpath, where the result will be saved.
+        searchPath (string): Directory fullpath, where the result will be saved.
     Return:
         None
     """
@@ -258,14 +258,20 @@ def cbInMem(listOfPaths, sort=False):
     temp = np.zeros((1, metadata['height'], metadata['width']))
 
     # Stack arrays as cube
-    for bandpath in listOfPaths[0:5]:
+    band_names = []
+    for bandpath in listOfPaths:
         with rasterio.open(bandpath, 'r') as src:
             arr = src.read()
+            descr = src.name
+            band_names.append(os.path.basename(descr))
         
         cbarr = np.concatenate([temp, arr])
         temp = cbarr
 
-    return cbarr[1:, :, :]
+    # Update metadata. Reduce one because of temp array
+    metadata.update(count=cbarr.shape[0]-1)
+
+    return cbarr[1:, :, :], metadata, band_names
 
 
 

@@ -28,7 +28,11 @@ logger.addHandler(stream_handler)
 
 
 class GeoImClip:
-    def __init__(self, imPaths:List[str], mode:int, coords:List[float]=None,  srid:int=None, quad:int=None):
+    def __init__(self, imPaths:List[str],
+                        mode:int,
+                        coords:List[float]=None, 
+                        srid:int=None,
+                        quart:int=None):
         """Clip image (one or more) using bounding box from given coordinates, or one quadrant of
         the original image.
 
@@ -37,12 +41,9 @@ class GeoImClip:
             mode (int): Using Coordinates or Using Quadrants
             coords (List[float], optional): Coordinates of bounding box when mode==1. Defaults to None.
             srid (int, optional): CRS of given coordinates when mode==1. Defaults to None.
-            quad (int, optional): One of four quadrants when mode==2. Defaults to None.
+            quart (int, optional): One of four quarters when mode==2. Defaults to None.
         """
         self.imPaths = imPaths
-
-        if mode not in [1, 2]:
-            logger.exception(f"Argument 'mode' could be 1 or 2. Given is {mode}")
 
         if mode == 1:
             # Using Coordinates
@@ -56,17 +57,16 @@ class GeoImClip:
             
         elif mode == 2:
             # Using Quadrants
-            if quad not in [1, 2, 3, 4]:
-                logger.exception(f"Acceptable quadrant is 1 or 2 or 3 or 4")
+            if quart not in [1, 2, 3, 4]:
+                logger.exception(f"Acceptable quarter is 1 or 2 or 3 or 4")
 
-            minx, maxx, miny, maxy = self.quadrants_coords(self.imPaths[0], quad)
+            minx, maxx, miny, maxy = self.quarters_coords(self.imPaths[0], quart)
             with rasterio.open(self.imPaths[0]) as src:
                 srid = src.meta['crs'].to_epsg()
             self.geometry = self.boundingBox(minx, maxx, miny, maxy, srid)
 
         else:
-            logger.error(" .. ")
-
+            logger.exception(f"Argument 'mode' could be 1 or 2. Given is {mode}")
 
 
     def boundingBox(self, minx:float, maxx:float, miny:float, maxy:float, srid:int):
@@ -89,39 +89,36 @@ class GeoImClip:
         return gpd.GeoDataFrame({'geometry': bbox}, index=[0], crs=from_epsg(srid))
 
 
-
-
-    @staticmethod
-    def quadrants_coords(raster_file:str, quadrant:int):
-        """Clip selected quadrant of raster file.
+    def quarters_coords(self, raster_file:str, quarter:int):
+        """Clip selected quarter of raster file.
 
         Args:
             raster_file (str): Raster image file fullpath.
-            quadrant (int): One of the four pieces. Start counting from upper left corner, clockwise.
+            quarter (int): One of the four pieces. Start counting from upper left corner, clockwise.
                 Integer in range [1,4].
         """
 
         with rasterio.open(raster_file) as src:
 
-            if quadrant == 1:
+            if quarter == 1:
                 minx = src.bounds.left
                 maxy = src.bounds.top
                 maxx = src.bounds.left + (src.bounds.right - src.bounds.left)/2 # middle point
                 miny = src.bounds.top - (src.bounds.top - src.bounds.bottom)/2 # middle point
 
-            elif quadrant == 2:
+            elif quarter == 2:
                 minx = src.bounds.left + (src.bounds.right - src.bounds.left)/2 # upper middle point
                 maxy = src.bounds.top # upper middle point
                 maxx = src.bounds.right # right middle point
                 miny = src.bounds.bottom + (src.bounds.top - src.bounds.bottom)/2 # right middle point
 
-            elif quadrant == 3:
+            elif quarter == 3:
                 minx = src.bounds.left + (src.bounds.right - src.bounds.left)/2 # middle point
                 maxy = src.bounds.top - (src.bounds.top - src.bounds.bottom)/2 # middle point
                 maxx = src.bounds.right
                 miny = src.bounds.bottom
 
-            elif quadrant == 4:
+            elif quarter == 4:
                 minx = src.bounds.left # left middle point
                 maxy = src.bounds.bottom + (src.bounds.top - src.bounds.bottom)/2 # left middle point
                 maxx = src.bounds.left + (src.bounds.right - src.bounds.left)/2 # lower middle point
@@ -133,8 +130,11 @@ class GeoImClip:
         return(minx, maxx, miny, maxy)
 
 
-    @staticmethod
-    def clip(im:str, geometry, newname_flag:str, resize=False, write=True):
+
+    def clip(self, im:str, geometry,
+                        newname_flag:str,
+                        resize:bool=False,
+                        write:bool=True,):
         """Clip image & update metadata of output image. Option to write
         output image to disk.
 
@@ -153,13 +153,15 @@ class GeoImClip:
         # New name for output image. Split on second occurence of dot.
         out_tif = im.split('.')[0]+ '.'+ im.split('.')[1] + str(newname_flag) + '.tif'
 
-        if os.path.exists(out_tif) == True and os.stat(out_tif).st_size != 0:
-            # Pass if file already exists & it's size is not zero.
-            return
+        # if os.path.exists(out_tif) == True and os.stat(out_tif).st_size != 0:
+        #     # Pass if file already exists & it's size is not zero.
+        #     logger.info(f"Destination clipped image already exists. Pass.")
+        #     return
 
         with rasterio.open(im) as src:
             # Image metadata.
             metadata = src.meta
+            band_name = src.name
 
             # # It doesn't work well. It changes orinal minx & maxy.
             # # Convert window's CRS to image's CRS.
@@ -190,7 +192,7 @@ class GeoImClip:
         if resize == True:
             # Create the new transformation.
             transf = rasterio.transform.from_origin(
-                geometry.bounds['minx'][0], geometry.bounds['maxy'][0], pixelSize//2, pixelSize//2)
+                geometry.bounds['minx'][0], geometry.bounds['maxy'][0], pixelSize//2, pixelSize//2)     # FIXME: Isn't problematic ?
 
             # Update metadata for output image
             metadata.update({"height": out_img.shape[0]*2,
@@ -211,7 +213,7 @@ class GeoImClip:
             # clipped = rasterio.open(out_tif)
             # #show((clipped, 1), cmap='terrain')
 
-        return out_img, metadata
+        return out_img, metadata, band_name
 
 
 
@@ -364,6 +366,7 @@ def vectorize(raster_file, metadata, vector_file, driver, mask_value=None, **kwa
                 vector_file, 'w', 
                 driver = driver,
                 crs = metadata['crs'],
+                encoding = 'utf-8',
                 schema = {'properties': [('raster_val', 'int')], 'geometry': 'Polygon'}) as dst:
             dst.writerecords(features)
 
