@@ -27,78 +27,127 @@ logger.addHandler(stream_handler)
 
 
 
+
 class GeoImClip:
-    def __init__(self, imPaths:List[str],
-                        mode:int,
-                        coords:List[float]=None, 
-                        srid:int=None,
-                        quart:int=None):
-        """Clip image (one or more) using bounding box from given coordinates, or one quadrant of
-        the original image.
+    def __init__(self, im:str, newname_flag:str, write:bool=True, dstdir:str=None):
+        """Clip one band or multiband image, using three methods. By image coordinates,
+        by coordinates in the same CRS as the image is, or by selecting a quarter of the image
+        counting clockwise.
 
         Args:
-            imPaths (List[str]): List containing fullpaths to images which are going to be clipped.
-            mode (int): Using Coordinates or Using Quadrants
-            coords (List[float], optional): Coordinates of bounding box when mode==1. Defaults to None.
-            srid (int, optional): CRS of given coordinates when mode==1. Defaults to None.
-            quart (int, optional): One of four quarters when mode==2. Defaults to None.
+            im (str): Fullpath to an image or cube-image.
+            newname_flag (str): A flag which will be added to the end of the filename,
+                in order to form the new filename.
+            write (bool, optional): Save the image. Destination path is required. Defaults to True.
+            dstdir (str, optional): Destination path. Defaults to None.
         """
-        self.imPaths = imPaths
+        self.im = im
+        self.newname_flag = newname_flag
+        self.write = write
+        self.dstdir = dstdir
 
-        if mode == 1:
-            # Using Coordinates
-            if len(coords) != 4:
-                logger.exception(f"Four coordinates should be given in a list. E.g. [minx, maxx, miny, maxy]")
-            if srid is None:
-                logger.exception(f"Coordinates' CRS must be given")
-
-            minx, maxx, miny, maxy = coords
-            self.geometry = self.boundingBox(minx, maxx, miny, maxy, srid)
-            
-        elif mode == 2:
-            # Using Quadrants
-            if quart not in [1, 2, 3, 4]:
-                logger.exception(f"Acceptable quarter is 1 or 2 or 3 or 4")
-
-            minx, maxx, miny, maxy = self.quarters_coords(self.imPaths[0], quart)
-            with rasterio.open(self.imPaths[0]) as src:
-                srid = src.meta['crs'].to_epsg()
-            self.geometry = self.boundingBox(minx, maxx, miny, maxy, srid)
-
-        else:
-            logger.exception(f"Argument 'mode' could be 1 or 2. Given is {mode}")
-
-
-    def boundingBox(self, minx:float, maxx:float, miny:float, maxy:float, srid:int):
-        """Generates polygon geometry, from given coordinates.
-        Given coordinates must be in the same CRS, as image's CRS.
+    def byImCoords(self, imCoords:List[int]):
+        """Clip one band or multiband image by image-coordinates.
 
         Args:
-            minx (float): left = west
-            maxx (float): right = east
-            miny (float): bottom = south
-            maxy (float): top = north
-            srid (int): coordinates reference system id.
+            imCoords (List[int]): [row_start, row_stop, col_start, col_stop, band_start, band_stop]
 
         Returns:
-            geodataframe: polygon geometry
+            tuple: The final result as array, corresponding metadata as rasterio-dictionary-metadata
+                and the band name as string.
         """
-        # Create bounding box
-        bbox = box(minx, miny, maxx, maxy)
-        # Return geometry as GeoDataFrame
-        return gpd.GeoDataFrame({'geometry': bbox}, index=[0], crs=from_epsg(srid))
+
+        if len(imCoords) != 6:
+            logger.exception(f"Six coordinates should be given in a list. E.g. [row_start, row_stop, col_start, col_stop, band_start, band_stop]")
+
+        # Image coordinates
+        row_start, row_stop, col_start, col_stop, band_start, band_stop = imCoords
+
+        # Construct a window by image coordinates.
+        win = Window.from_slices(slice(row_start, row_stop), slice(col_start, col_stop))     
+
+        # Image dimensions
+        rows = row_stop-row_start
+        cols = col_stop-col_start
+        bands = [i for i in range(band_start+1, band_stop+1)]
+
+        with rasterio.open(self.im) as src:
+        
+            # Find top-left x, y coordinates of new image, from selected starting row, col
+            new_left_top_coords = src.xy(row_start, col_start, offset='ul')
+            
+            # Original image metadata
+            metadata = src.meta
+            band_name = src.name
+            
+            # Assume that pixel is cubic
+            pixelSize = list(metadata['transform'])[0]
+            
+            # Create the new transformation
+            transf = rasterio.transform.from_origin(
+                new_left_top_coords[0], new_left_top_coords[1], pixelSize, pixelSize)
+
+            # Update metadata. Can be used to save new geolocated image
+            metadata.update(height=rows , width=cols, count=len(bands), transform=transf)
+            
+            # Load image as array
+            out_img = src.read(bands, window=win)
+
+        if self.write == True:
+
+            # Reshape as rasterio needs the shape.
+            temp = out_img.reshape(1, out_img.shape[0], out_img.shape[1])
+
+            # Output filename
+            out_tif = os.path.join(self.dstdir, band_name +'_'+ self.newname_flag + '.tif')
+
+            # Write output image to disk
+            with rasterio.open(out_tif, "w", **metadata) as dest:
+                dest.write(temp)
+            
+        return out_img, metadata, band_name
 
 
-    def quarters_coords(self, raster_file:str, quarter:int):
-        """Clip selected quarter of raster file.
+
+    def byXYcoords(self, coords:List[float]):
+        """Clip one band or multiband image by coordinates. Image and coordinates should have the same CRS.
 
         Args:
-            raster_file (str): Raster image file fullpath.
-            quarter (int): One of the four pieces. Start counting from upper left corner, clockwise.
-                Integer in range [1,4].
+            coords (List[float]): [minx, maxx, miny, maxy]
+
+        Returns:
+            tuple: The final result as array, corresponding metadata as rasterio-dictionary-metadata
+                and the band name as string.
+        """
+        
+        if len(coords) != 4:
+            logger.exception(f"Six coordinates should be given in a list. E.g. [minx, maxx, miny, maxy]")
+
+        # Coordinates
+        minx, miny, maxx, maxy = coords
+    
+        with rasterio.open(self.im) as src:
+
+            # Convert x,y to row, col. Image and coordinates should have the same CRS.
+            row_start, col_start = src.index(minx, maxy)
+            row_stop, col_stop = src.index(maxx, miny)
+        
+        return self.byImCoords([row_start, row_stop, col_start, col_stop])
+                
+                            
+                                
+    def byQuarters(self, quarter:int):
+        """Clip one band or multiband image by selecting a quarter, counting clockwise.
+
+        Args:
+            quarter (int): 1 or 2 or 3 or 4
+
+        Returns:
+            tuple: The final result as array, corresponding metadata as rasterio-dictionary-metadata
+                and the band name as string.
         """
 
-        with rasterio.open(raster_file) as src:
+        with rasterio.open(self.im) as src:
 
             if quarter == 1:
                 minx = src.bounds.left
@@ -127,95 +176,9 @@ class GeoImClip:
             else:
                 logger.error('Quadrant must be integer in range [1,4].')
 
-        return(minx, maxx, miny, maxy)
+        return self.byXYcoords([minx, maxx, miny, maxy])
 
-
-
-    def clip(self, im:str, geometry,
-                        newname_flag:str,
-                        resize:bool=False,
-                        write:bool=True,):
-        """Clip image & update metadata of output image. Option to write
-        output image to disk.
-
-        Args:
-            im (str): Path to image.
-            geometry (GeoDataFrame): Bounding box to clip image.
-            newname_flag (str): Piece of string added to the end of the new filename.
-            resize (bool, optional): Whether to resize output raster. Defaults to False.
-            write (bool, optional): Whether to save output raster to disk. Defaults to True.
-
-        Returns:
-            out_img (array): clipped array.
-            out_meta (dictionary): updated metadata for clipped raster.
-        """
-
-        # New name for output image. Split on second occurence of dot.
-        out_tif = im.split('.')[0]+ '.'+ im.split('.')[1] + str(newname_flag) + '.tif'
-
-        # if os.path.exists(out_tif) == True and os.stat(out_tif).st_size != 0:
-        #     # Pass if file already exists & it's size is not zero.
-        #     logger.info(f"Destination clipped image already exists. Pass.")
-        #     return
-
-        with rasterio.open(im) as src:
-            # Image metadata.
-            metadata = src.meta
-            band_name = src.name
-
-            # # It doesn't work well. It changes orinal minx & maxy.
-            # # Convert window's CRS to image's CRS.
-            # geom = geometry.to_crs(crs=metadata['crs'])
-
-            # Convert x,y to row, col.
-            row_start, col_start = src.index(geometry.bounds['minx'][0], geometry.bounds['maxy'][0])
-            row_stop, col_stop = src.index(geometry.bounds['maxx'][0], geometry.bounds['miny'][0])
-
-            # Parse pixel size from metadata.
-            pixelSize = list(metadata['transform'])[0]
-
-            # Create the new transformation.
-            transf = rasterio.transform.from_origin(
-                geometry.bounds['minx'][0], geometry.bounds['maxy'][0], pixelSize, pixelSize)
-
-            # Update metadata.
-            metadata.update(
-                driver='GTiff', transform=transf,
-                height=(row_stop-row_start), width=(col_stop-col_start))
-
-            # Construct a window by image coordinates.
-            win = Window.from_slices(slice(row_start, row_stop), slice(col_start, col_stop))
-
-            # Clip image.
-            out_img = src.read(1, window=win)
-
-        if resize == True:
-            # Create the new transformation.
-            transf = rasterio.transform.from_origin(
-                geometry.bounds['minx'][0], geometry.bounds['maxy'][0], pixelSize//2, pixelSize//2)     # FIXME: Isn't problematic ?
-
-            # Update metadata for output image
-            metadata.update({"height": out_img.shape[0]*2,
-                        "width": out_img.shape[1]*2,
-                        "transform": transf})
-            # Upsample.
-            out_img = cv2.resize(
-                out_img, (2*out_img.shape[0], 2*out_img.shape[1]), interpolation=cv2.INTER_LINEAR)
-
-        if write == True:
-            # Reshape as rasterio needs the shape.
-            temp = out_img.reshape(1, out_img.shape[0], out_img.shape[1])
-            # Write output image to disk
-            with rasterio.open(out_tif, "w", **metadata) as dest:
-                dest.write(temp)
-
-            # # Plot output image
-            # clipped = rasterio.open(out_tif)
-            # #show((clipped, 1), cmap='terrain')
-
-        return out_img, metadata, band_name
-
-
+        
 
 
 
