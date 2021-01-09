@@ -298,7 +298,7 @@ def normalizeCommonLayers(listOfPaths, destDtype, overwrite=False, **kwargs):
 
 
 
-def vectorize(raster_file, metadata, vector_file, driver, mask_value=None, **kwargs):
+def vectorize(raster_file, metadata, vector_file, driver, mask_value=None, dropRasterVal=None, **kwargs):
     """ Extract vector from raster. Vector propably will include polygons with holes.
     
     Args:
@@ -307,6 +307,7 @@ def vectorize(raster_file, metadata, vector_file, driver, mask_value=None, **kwa
         vector_file (string): Pathname of output vector file.
         driver (string): Kind of vector file format.
         mask_value (float or integer): No data value.
+        dropRasterVal : A raster value we want to omit from vectorization
     
     Returns:
         None. Saves folder containing vector shapefile to cwd or to given path.
@@ -321,7 +322,8 @@ def vectorize(raster_file, metadata, vector_file, driver, mask_value=None, **kwa
     logging.debug("Extract id, shapes & values...")
     features = ({'properties': {'raster_val': v}, 'geometry': s} for i, (s, v) in enumerate(
             # The shapes iterator yields geometry, value pairs.
-            shapes(raster_file, mask=mask, connectivity=4, transform=metadata['transform'])))
+            shapes(raster_file, mask=mask, connectivity=4, transform=metadata['transform'])) if v != dropRasterVal)
+
 
     logging.debug("Save to disk...")
     with fiona.Env():
