@@ -132,7 +132,7 @@ class GeoImClip:
             row_start, col_start = src.index(minx, maxy)
             row_stop, col_stop = src.index(maxx, miny)
         
-        return self.byImCoords([row_start, row_stop, col_start, col_stop])
+        return self.byImCoords([row_start, row_stop, col_start, col_stop, 0, 1])
                 
                             
                                 
@@ -320,10 +320,9 @@ def vectorize(raster_file, metadata, vector_file, driver, mask_value=None, dropR
         mask = None
     
     logging.debug("Extract id, shapes & values...")
-    features = ({'properties': {'raster_val': v}, 'geometry': s} for i, (s, v) in enumerate(
+    features = ({'properties': {'raster_val': v, 'id':i}, 'geometry': s} for i, (s, v) in enumerate(
             # The shapes iterator yields geometry, value pairs.
             shapes(raster_file, mask=mask, connectivity=4, transform=metadata['transform'])) if v != dropRasterVal)
-
 
     logging.debug("Save to disk...")
     with fiona.Env():
@@ -332,11 +331,11 @@ def vectorize(raster_file, metadata, vector_file, driver, mask_value=None, dropR
                 driver = driver,
                 crs = metadata['crs'],
                 encoding = 'utf-8',
-                schema = {'properties': [('raster_val', 'int')], 'geometry': 'Polygon'}) as dst:
+                schema = {'properties': [('raster_val', 'int'), ('id', 'int')], 'geometry': 'Polygon'}) as dst:
             dst.writerecords(features)
 
     end = dt.datetime.now()
-    logging.info("Elapsed time to vectorize raster to shp {}:\n{} mins".format(
+    logging.info("Elapsed time to vectorize raster and save shp {}:\n{} mins".format(
         vector_file, (int((end-start).seconds/60))))
     return None
 

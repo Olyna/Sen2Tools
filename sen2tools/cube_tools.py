@@ -303,7 +303,7 @@ def extremeDOY(cbdf, dates, mode='max'):
     # Drop NaN values. Cuz idxmax() returns NaN if all entries are NaN.
     w = w[~np.isnan(w)]
     for value in w:
-        res.replace(value, dt.datetime.strptime(dates[int(value)], '%Y-%m-%d'), inplace=True)
+        res.replace(value, dt.datetime.strptime(dates[int(value)], '%Y%m%d'), inplace=True)
 
     # Convert datetime objects to day of year
     return res.dt.dayofyear
